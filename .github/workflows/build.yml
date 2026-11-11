@@ -187,7 +187,43 @@ jobs:
                   return o;
               }
 
-              private JSObject analyze(File f) throws Exception {
+              private JSObject decorate(PackageManager pm, PackageInfo ip, JSObject c) {
+              try {
+                  c.put("versionName", ip.versionName);
+                  c.put("installedAt", ip.firstInstallTime);
+                  c.put("system", (ip.applicationInfo.flags & android.content.pm.ApplicationInfo.FLAG_SYSTEM) != 0);
+                  c.put("enabled", ip.applicationInfo.enabled);
+                  Intent li = pm.getLaunchIntentForPackage(ip.packageName);
+                  if (li != null && li.getComponent() != null) {
+                      try {
+                          c.put("launchLabel", String.valueOf(pm.getActivityInfo(li.getComponent(), 0).loadLabel(pm)));
+                      } catch (Exception ignored) {}
+                  }
+                  String inst = null;
+                  try {
+                      inst = Build.VERSION.SDK_INT >= 30
+                              ? pm.getInstallSourceInfo(ip.packageName).getInstallingPackageName()
+                              : pm.getInstallerPackageName(ip.packageName);
+                  } catch (Exception ignored) {}
+                  if (inst != null) {
+                      c.put("installer", inst);
+                      try {
+                          c.put("installerLabel", String.valueOf(pm.getApplicationLabel(pm.getApplicationInfo(inst, 0))));
+                      } catch (Exception ignored) {}
+                  }
+              } catch (Exception ignored) {}
+              return c;
+          }
+
+          @PluginMethod
+          public void settings(PluginCall call) {
+              Intent i = new Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS, Uri.parse("package:" + call.getString("pkg")));
+              i.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+              getContext().startActivity(i);
+              call.resolve();
+          }
+
+          private JSObject analyze(File f) throws Exception {
                   PackageManager pm = getContext().getPackageManager();
                   int sigFlag = Build.VERSION.SDK_INT >= 28 ? PackageManager.GET_SIGNING_CERTIFICATES : PackageManager.GET_SIGNATURES;
                   PackageInfo ap = pm.getPackageArchiveInfo(f.getAbsolutePath(),
@@ -222,11 +258,11 @@ jobs:
                       inst.put("versionCode", oldCode);
                       o.put("installed", inst);
                       if (!same) {
-                          list.put(conflict("signature", ap.packageName, il,
-                                  "Установлено другое приложение с таким же package name, подпись отличается (" + shortSig(oldSigs) + " ≠ " + shortSig(newSigs) + "). Обновить поверх нельзя, нужно удалить."));
+                          list.put(decorate(pm, ip, conflict("signature", ap.packageName, il,
+                                  "Установлено другое приложение с таким же package name, подпись отличается (" + shortSig(oldSigs) + " ≠ " + shortSig(newSigs) + "). Обновить поверх нельзя, нужно удалить.")));
                       } else if (oldCode > newCode) {
-                          list.put(conflict("downgrade", ap.packageName, il,
-                                  "Установлена версия новее (" + ip.versionName + " > " + ap.versionName + "). Понижение версии запрещено."));
+                          list.put(decorate(pm, ip, conflict("downgrade", ap.packageName, il,
+                                  "Установлена версия новее (" + ip.versionName + " > " + ap.versionName + "). Понижение версии запрещено.")));
                       }
                   } catch (PackageManager.NameNotFoundException ignored) {}
 
