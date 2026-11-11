@@ -35,7 +35,23 @@ button:disabled{opacity:.5}
 <div id="out"></div>
 <p class="hint">Приложение читает выбранный APK и сравнивает его с установленными: package name, подпись, версию, provider authorities и объявленные разрешения.</p>
 <script>
-const ApkCheck = window.Capacitor && Capacitor.registerPlugin ? Capacitor.registerPlugin('ApkCheck') : null;
+function call(method, args) {
+  const C = window.Capacitor;
+  if (!C) return Promise.reject(new Error('Capacitor не найден: страница открыта не внутри приложения'));
+  const P = C.Plugins && C.Plugins.ApkCheck;
+  if (P && P[method]) return P[method](args || {});
+  if (typeof C.registerPlugin === 'function') {
+    try { const R = C.registerPlugin('ApkCheck'); if (R && R[method]) return R[method](args || {}); } catch (e) {}
+  }
+  if (typeof C.nativePromise === 'function') return C.nativePromise('ApkCheck', method, args || {});
+  return Promise.reject(new Error('Плагин ApkCheck недоступен'));
+}
+const ApkCheck = {
+  pick: () => call('pick'),
+  check: a => call('check', a),
+  install: a => call('install', a),
+  uninstall: a => call('uninstall', a)
+};
 const out = document.getElementById('out');
 const pickBtn = document.getElementById('pick');
 let cur = null;
@@ -93,8 +109,7 @@ async function recheck() {
 }
 
 pickBtn.onclick = async () => {
-  if (!ApkCheck) { showErr('Работает только внутри Android-приложения'); return; }
-  pickBtn.disabled = true;
+    pickBtn.disabled = true;
   out.innerHTML = '<div class="hint">Читаю файл…</div>';
   try { render(await ApkCheck.pick()); }
   catch (e) { if (String(e.message || e).includes('cancel')) out.innerHTML = ''; else showErr(e); }
