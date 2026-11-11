@@ -1,0 +1,105 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>APK Check</title>
+<style>
+:root{--bg:#14161b;--card:#1d2027;--line:#2c313b;--tx:#e8eaee;--dim:#8d94a3;--ok:#3fbf7f;--bad:#ef5b5b;--warn:#e9a23b;--ac:#6f8cff}
+*{box-sizing:border-box}
+html,body{margin:0;background:var(--bg);color:var(--tx);font:16px/1.45 system-ui,Roboto,sans-serif}
+body{padding:max(16px,env(safe-area-inset-top)) 16px 40px}
+h1{font-size:22px;margin:4px 0 16px;font-weight:600}
+button{font:inherit;border:0;border-radius:12px;padding:13px 16px;background:var(--ac);color:#fff;width:100%;font-weight:600}
+button.sec{background:var(--card);border:1px solid var(--line);color:var(--tx)}
+button.danger{background:var(--bad)}
+button.small{width:auto;padding:8px 14px;font-size:14px;margin-top:10px}
+button:disabled{opacity:.5}
+.box{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:14px;margin-top:14px}
+.row{display:flex;justify-content:space-between;gap:10px;padding:3px 0;font-size:14px}
+.row span:first-child{color:var(--dim);flex:none}
+.row span:last-child{text-align:right;word-break:break-all}
+.name{font-size:18px;font-weight:600}
+.pkg{color:var(--dim);font-size:13px;word-break:break-all}
+.status{font-weight:600;margin-bottom:4px}
+.ok{color:var(--ok)}.bad{color:var(--bad)}.warn{color:var(--warn)}
+.cf{border-left:3px solid var(--bad);padding-left:12px;margin-top:14px}
+.cf .t{font-weight:600}
+.cf .d{font-size:14px;color:var(--dim);margin-top:2px}
+.hint{color:var(--dim);font-size:13px;margin-top:14px}
+</style>
+</head>
+<body>
+<h1>Проверка APK на конфликты</h1>
+<button id="pick">Выбрать APK</button>
+<div id="out"></div>
+<p class="hint">Приложение читает выбранный APK и сравнивает его с установленными: package name, подпись, версию, provider authorities и объявленные разрешения.</p>
+<script>
+const ApkCheck = window.Capacitor && Capacitor.registerPlugin ? Capacitor.registerPlugin('ApkCheck') : null;
+const out = document.getElementById('out');
+const pickBtn = document.getElementById('pick');
+let cur = null;
+const esc = s => String(s == null ? '' : s).replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+const TITLES = {
+  signature: 'Тот же package name, другая подпись',
+  downgrade: 'Установлена версия новее',
+  provider: 'Конфликт provider authority',
+  permission: 'Конфликт разрешения'
+};
+
+function render(r) {
+  cur = r;
+  const cs = r.conflicts || [];
+  const blocking = cs.length > 0;
+  let h = '<div class="box"><div class="name">' + esc(r.label) + '</div><div class="pkg">' + esc(r.pkg) + '</div>' +
+    '<div style="margin-top:8px"><div class="row"><span>Версия</span><span>' + esc(r.versionName) + ' (' + esc(r.versionCode) + ')</span></div>' +
+    '<div class="row"><span>Подпись</span><span>' + esc(r.sig) + '</span></div>';
+  if (r.installed) h += '<div class="row"><span>Сейчас установлено</span><span>' + esc(r.installed.label) + ' ' + esc(r.installed.versionName) + '</span></div>';
+  h += '</div></div>';
+  h += '<div class="box"><div class="status ' + (blocking ? 'bad' : 'ok') + '">' +
+    (blocking ? 'Найдено конфликтов: ' + cs.length : 'Конфликтов нет') + '</div>';
+  cs.forEach((c, i) => {
+    h += '<div class="cf"><div class="t">' + esc(c.label) + '</div><div class="pkg">' + esc(c.pkg) + '</div>' +
+      '<div class="d"><b>' + esc(TITLES[c.type] || c.type) + '.</b> ' + esc(c.detail) + '</div>' +
+      '<button class="danger small" data-i="' + i + '">Удалить ' + esc(c.label) + '</button></div>';
+  });
+  h += '</div>';
+  h += '<div style="margin-top:14px;display:grid;gap:10px"><button id="inst" class="' + (blocking ? 'sec' : '') + '">' +
+    (blocking ? 'Всё равно установить' : 'Установить') + '</button>' +
+    '<button id="re" class="sec">Проверить заново</button></div>';
+  out.innerHTML = h;
+  out.querySelectorAll('button[data-i]').forEach(b => b.onclick = () => ApkCheck.uninstall({ pkg: cs[+b.dataset.i].pkg }));
+  document.getElementById('inst').onclick = install;
+  document.getElementById('re').onclick = recheck;
+}
+
+function showErr(e) {
+  const m = (e && (e.message || e)) || 'Ошибка';
+  out.innerHTML = '<div class="box bad">' + esc(m) + '</div>';
+}
+
+async function install() {
+  try { await ApkCheck.install({ path: cur.path }); }
+  catch (e) {
+    if (String(e.message || e).includes('need_permission'))
+      alert('Разрешите этому приложению установку из неизвестных источников и нажмите «Установить» ещё раз.');
+    else showErr(e);
+  }
+}
+
+async function recheck() {
+  out.insertAdjacentHTML('afterbegin', '<div class="hint">Проверяю…</div>');
+  try { render(await ApkCheck.check({ path: cur.path })); } catch (e) { showErr(e); }
+}
+
+pickBtn.onclick = async () => {
+  if (!ApkCheck) { showErr('Работает только внутри Android-приложения'); return; }
+  pickBtn.disabled = true;
+  out.innerHTML = '<div class="hint">Читаю файл…</div>';
+  try { render(await ApkCheck.pick()); }
+  catch (e) { if (String(e.message || e).includes('cancel')) out.innerHTML = ''; else showErr(e); }
+  pickBtn.disabled = false;
+};
+</script>
+</body>
+</html>
