@@ -50,7 +50,8 @@ const ApkCheck = {
   pick: () => call('pick'),
   check: a => call('check', a),
   install: a => call('install', a),
-  uninstall: a => call('uninstall', a)
+  uninstall: a => call('uninstall', a),
+  settings: a => call('settings', a)
 };
 const out = document.getElementById('out');
 const pickBtn = document.getElementById('pick');
@@ -62,6 +63,18 @@ const TITLES = {
   provider: 'Конфликт provider authority',
   permission: 'Конфликт разрешения'
 };
+
+function fmtDate(ms) { return ms ? new Date(ms).toLocaleDateString('ru-RU') : ''; }
+function extra(c) {
+  if (c.versionName == null && c.installedAt == null) return '';
+  const rows = [['Версия', c.versionName]];
+  rows.push(c.launchLabel ? ['Название на рабочем столе', c.launchLabel] : ['Значок на рабочем столе', 'нет (скрытое приложение)']);
+  rows.push(['Установлено', fmtDate(c.installedAt)]);
+  rows.push(['Откуда', c.installerLabel || c.installer || 'неизвестно (из apk-файла)']);
+  if (c.system) rows.push(['Тип', 'системное']);
+  if (c.enabled === false) rows.push(['Состояние', 'отключено']);
+  return '<div style="margin-top:8px">' + rows.map(r => '<div class="row"><span>' + esc(r[0]) + '</span><span>' + esc(r[1]) + '</span></div>').join('') + '</div>';
+}
 
 function render(r) {
   cur = r;
@@ -75,9 +88,10 @@ function render(r) {
   h += '<div class="box"><div class="status ' + (blocking ? 'bad' : 'ok') + '">' +
     (blocking ? 'Найдено конфликтов: ' + cs.length : 'Конфликтов нет') + '</div>';
   cs.forEach((c, i) => {
-    h += '<div class="cf"><div class="t">' + esc(c.label) + '</div><div class="pkg">' + esc(c.pkg) + '</div>' +
-      '<div class="d"><b>' + esc(TITLES[c.type] || c.type) + '.</b> ' + esc(c.detail) + '</div>' +
-      '<button class="danger small" data-i="' + i + '">Удалить ' + esc(c.label) + '</button></div>';
+    h += '<div class="cf"><div class="t">Установлено: ' + esc(c.label) + '</div><div class="pkg">' + esc(c.pkg) + '</div>' +
+      '<div class="d"><b>' + esc(TITLES[c.type] || c.type) + '.</b> ' + esc(c.detail) + '</div>' + extra(c) +
+      '<div style="display:flex;gap:8px;flex-wrap:wrap"><button class="danger small" data-i="' + i + '">Удалить</button>' +
+      '<button class="sec small" data-s="' + i + '">Настройки приложения</button></div></div>';
   });
   h += '</div>';
   h += '<div style="margin-top:14px;display:grid;gap:10px"><button id="inst" class="' + (blocking ? 'sec' : '') + '">' +
@@ -85,6 +99,7 @@ function render(r) {
     '<button id="re" class="sec">Проверить заново</button></div>';
   out.innerHTML = h;
   out.querySelectorAll('button[data-i]').forEach(b => b.onclick = () => ApkCheck.uninstall({ pkg: cs[+b.dataset.i].pkg }));
+  out.querySelectorAll('button[data-s]').forEach(b => b.onclick = () => ApkCheck.settings({ pkg: cs[+b.dataset.s].pkg }));
   document.getElementById('inst').onclick = install;
   document.getElementById('re').onclick = recheck;
 }
